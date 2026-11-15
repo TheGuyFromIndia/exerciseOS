@@ -36,8 +36,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
     restAnnouncements: true,
     countdownAt10: false,
     countdownAt5: true,
-    randomCoaching: true,
-    coachingFrequencySeconds: 30, // 25-40s range default
+    halfwayAnnouncements: true,
   },
   keepScreenAwake: true,
   showSkipConfirmation: false,

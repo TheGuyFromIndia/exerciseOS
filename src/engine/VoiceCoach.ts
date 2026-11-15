@@ -3,7 +3,7 @@
 // Web Speech API coaching engine with priority scheduling
 // Priority:
 //   1: Phase transitions, 5s countdowns & workout completion
-//   2: Rest countdowns ("Get ready" @ 30s) & 10s warnings
+//   2: Rest countdowns ("Get ready" @ 30s), halfway & 10s warnings
 //   3: Minute completed announcements
 // ============================================================
 
@@ -17,6 +17,14 @@ interface QueueItem {
   priority: SpeechPriority;
 }
 
+interface AudioSession {
+  type: 'auto' | 'playback' | 'transient' | 'transient-solo' | 'ambient' | 'play-and-record';
+}
+
+interface NavigatorWithAudioSession extends Navigator {
+  audioSession?: AudioSession;
+}
+
 export class VoiceCoach {
   private settings: VoiceSettings;
   private isSpeaking: boolean = false;
@@ -24,6 +32,7 @@ export class VoiceCoach {
   private speechQueue: QueueItem[] = [];
   private announced30sRest: boolean = false;
   private announced10s: boolean = false;
+  private announcedHalfway: boolean = false;
   private announcedMinutes: Set<number> = new Set();
   private announcedCountdownSeconds: Set<number> = new Set();
   private isAvailable: boolean = false;
@@ -31,6 +40,22 @@ export class VoiceCoach {
   constructor(settings: VoiceSettings) {
     this.settings = settings;
     this.isAvailable = typeof window !== 'undefined' && 'speechSynthesis' in window;
+    this.configureAudioSession();
+  }
+
+  private configureAudioSession(): void {
+    // Setting 'transient' informs iOS / Safari to allow background audio (e.g. Spotify)
+    // to keep playing and automatically duck (lower volume) during voice announcements.
+    if (typeof navigator !== 'undefined') {
+      const nav = navigator as NavigatorWithAudioSession;
+      if (nav.audioSession) {
+        try {
+          nav.audioSession.type = 'transient';
+        } catch {
+          // Ignored if blocked
+        }
+      }
+    }
   }
 
   updateSettings(settings: VoiceSettings): void {
@@ -45,12 +70,10 @@ export class VoiceCoach {
   }
 
   initOnUserGesture(): void {
+    this.configureAudioSession();
     if (!this.isAvailable) return;
     try {
       window.speechSynthesis.cancel();
-      const primingUtterance = new SpeechSynthesisUtterance(' ');
-      primingUtterance.volume = 0.01;
-      window.speechSynthesis.speak(primingUtterance);
     } catch {
       // Ignored if blocked
     }
@@ -75,6 +98,7 @@ export class VoiceCoach {
     const item = this.speechQueue.shift();
     if (!item) return;
 
+    this.configureAudioSession();
     this.isSpeaking = true;
     this.currentlySpeakingPriority = item.priority;
     const utterance = new SpeechSynthesisUtterance(item.text);
@@ -83,10 +107,21 @@ export class VoiceCoach {
     utterance.rate = item.priority === 1 && /^\d+ second/.test(item.text) ? Math.max(1.15, baseRate) : baseRate;
     utterance.volume = 1.0;
 
+    const allVoices = window.speechSynthesis.getVoices();
     if (this.settings.voiceURI) {
-      const allVoices = window.speechSynthesis.getVoices();
       const match = allVoices.find(v => v.voiceURI === this.settings.voiceURI);
       if (match) utterance.voice = match;
+    } else if (allVoices.length > 0) {
+      // Auto-select the best quality natural/enhanced voice if none explicitly selected
+      const naturalVoice = allVoices.find(v =>
+        v.lang.startsWith('en') &&
+        /(natural|enhanced|premium|siri|neural|google)/i.test(v.name)
+      ) ?? allVoices.find(v => v.lang.startsWith('en') && v.default)
+        ?? allVoices.find(v => v.lang.startsWith('en'));
+
+      if (naturalVoice) {
+        utterance.voice = naturalVoice;
+      }
     }
 
     utterance.onend = () => {
@@ -128,6 +163,7 @@ export class VoiceCoach {
   onIntervalStart(interval: FlatInterval): void {
     this.announced30sRest = false;
     this.announced10s = false;
+    this.announcedHalfway = false;
     this.announcedMinutes.clear();
     this.announcedCountdownSeconds.clear();
 
@@ -182,6 +218,18 @@ export class VoiceCoach {
           ];
           const word = completedMinute <= 20 ? numberWords[completedMinute - 1] : `${completedMinute}`;
           this.enqueueSpeech(`${word} minute${completedMinute > 1 ? 's' : ''} completed.`, 3);
+        }
+      }
+
+      // Halfway announcement for intervals of 60 seconds or longer
+      if (
+        (this.settings.halfwayAnnouncements ?? true) &&
+        durationSeconds >= 60
+      ) {
+        const halfwayMark = Math.floor(durationSeconds / 2);
+        if (remainingSeconds === halfwayMark && !this.announcedHalfway) {
+          this.announcedHalfway = true;
+          this.enqueueSpeech('Halfway.', 2);
         }
       }
     }

@@ -107,6 +107,7 @@ export interface VoiceSettings {
   restAnnouncements: boolean;
   countdownAt10: boolean;
   countdownAt5: boolean;
+  halfwayAnnouncements: boolean;
   randomCoaching?: boolean;
   coachingFrequencySeconds?: number;
 }

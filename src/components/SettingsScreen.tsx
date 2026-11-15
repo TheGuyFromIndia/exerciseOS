@@ -91,12 +91,15 @@ export function SettingsScreen({ settings, onUpdate, onUpdateVoice, onBack }: Se
                     onChange={e => onUpdateVoice({ voiceURI: e.target.value || null })}
                     className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-xs text-white focus:outline-none focus:border-blue-500"
                   >
-                    <option value="">Default System Voice</option>
-                    {availableVoices.map(v => (
-                      <option key={v.voiceURI} value={v.voiceURI}>
-                        {v.name} ({v.lang})
-                      </option>
-                    ))}
+                    <option value="">Default (Auto-picks Best Natural Voice)</option>
+                    {availableVoices.map(v => {
+                      const isHighQuality = /(natural|enhanced|premium|siri|neural|google)/i.test(v.name);
+                      return (
+                        <option key={v.voiceURI} value={v.voiceURI}>
+                          {v.name} ({v.lang}) {isHighQuality ? '★ Natural / Enhanced' : ''}
+                        </option>
+                      );
+                    })}
                   </select>
                 </div>
               )}
@@ -135,6 +138,13 @@ export function SettingsScreen({ settings, onUpdate, onUpdateVoice, onBack }: Se
                 />
 
                 <ToggleItem
+                  title="Halfway Announcements"
+                  subtitle="Announce 'Halfway' at the midpoint of rounds"
+                  checked={settings.voice.halfwayAnnouncements ?? true}
+                  onChange={v => onUpdateVoice({ halfwayAnnouncements: v })}
+                />
+
+                <ToggleItem
                   title="Rest Alerts ('Get Ready')"
                   subtitle="Spoken warning at 30 seconds remaining in rest"
                   checked={settings.voice.restAnnouncements}
@@ -147,6 +157,17 @@ export function SettingsScreen({ settings, onUpdate, onUpdateVoice, onBack }: Se
                   checked={settings.voice.countdownAt5}
                   onChange={v => onUpdateVoice({ countdownAt5: v })}
                 />
+              </div>
+
+              {/* Spotify / Background Audio Ducking Notice */}
+              <div className="bg-slate-950/70 border border-slate-800 rounded-xl p-3 text-slate-400 space-y-1">
+                <div className="flex items-center gap-1.5 text-slate-200 text-xs font-bold">
+                  <span>🎵</span>
+                  <span>Spotify & Music Playback</span>
+                </div>
+                <p className="text-[11px] leading-relaxed">
+                  Exercise OS uses iOS audio ducking. Your Spotify or music app will continue playing uninterrupted during training, automatically lowering in volume only when countdowns or announcements speak.
+                </p>
               </div>
 
               {/* Test Voice Button */}
