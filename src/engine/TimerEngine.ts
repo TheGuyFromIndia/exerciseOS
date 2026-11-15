@@ -182,6 +182,7 @@ export interface TimerState {
 export interface TimerEngineCallbacks {
   onTick: (state: TimerState) => void;
   onIntervalComplete: (completed: FlatInterval, next: FlatInterval | null) => void;
+  onIntervalStart?: (interval: FlatInterval) => void;
   onWorkoutComplete: () => void;
   onStateChange: (state: ActivePhaseState) => void;
 }
@@ -241,6 +242,9 @@ export class TimerEngine {
 
     this.isFinished = false;
     this.startTickInterval();
+    if (this.intervals.length > 0 && this.currentIndex < this.intervals.length) {
+      this.callbacks.onIntervalStart?.(this.intervals[this.currentIndex]);
+    }
     this.broadcastTick();
     this.broadcastStateChange();
   }
@@ -298,6 +302,7 @@ export class TimerEngine {
     } else {
       this.recalculateElapsedBefore();
       this.resetIntervalTimestamp();
+      this.callbacks.onIntervalStart?.(this.intervals[this.currentIndex]);
       this.broadcastTick();
       this.broadcastStateChange();
     }
@@ -311,6 +316,7 @@ export class TimerEngine {
 
     if (currentRound === undefined) {
       this.resetIntervalTimestamp();
+      this.callbacks.onIntervalStart?.(this.intervals[this.currentIndex]);
       this.broadcastTick();
       this.broadcastStateChange();
       return;
@@ -330,6 +336,7 @@ export class TimerEngine {
     this.currentIndex = firstIndex;
     this.recalculateElapsedBefore();
     this.resetIntervalTimestamp();
+    this.callbacks.onIntervalStart?.(this.intervals[this.currentIndex]);
     this.broadcastTick();
     this.broadcastStateChange();
   }
@@ -364,6 +371,10 @@ export class TimerEngine {
       const nextInterval = this.intervals[this.currentIndex];
       this.intervalTargetTimestamp += nextInterval.durationSeconds * 1000;
       remainingMs = this.intervalTargetTimestamp - now;
+    }
+
+    if (this.currentIndex < this.intervals.length) {
+      this.callbacks.onIntervalStart?.(this.intervals[this.currentIndex]);
     }
 
     this.broadcastTick();
@@ -412,6 +423,7 @@ export class TimerEngine {
     }
 
     this.resetIntervalTimestamp();
+    this.callbacks.onIntervalStart?.(this.intervals[this.currentIndex]);
     this.broadcastTick();
     this.broadcastStateChange();
   }

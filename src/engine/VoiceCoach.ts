@@ -2,17 +2,15 @@
 // VOICE COACH — Exercise OS
 // Web Speech API coaching engine with priority scheduling
 // Priority:
-//   1: Phase transitions & workout completion
-//   2: Rest countdowns ("Get ready" @ 30s) & 10s/5s warnings
+//   1: Phase transitions, 5s countdowns & workout completion
+//   2: Rest countdowns ("Get ready" @ 30s) & 10s warnings
 //   3: Minute completed announcements
-//   4: Random coaching technique reminders
 // ============================================================
 
 import type { VoiceSettings } from '../types';
-import { getCoachingLibrary, getRandomCue } from '../data/coachingLibrary';
 import type { FlatInterval } from './TimerEngine';
 
-type SpeechPriority = 1 | 2 | 3 | 4;
+type SpeechPriority = 1 | 2 | 3;
 
 interface QueueItem {
   text: string;
@@ -22,11 +20,12 @@ interface QueueItem {
 export class VoiceCoach {
   private settings: VoiceSettings;
   private isSpeaking: boolean = false;
+  private currentlySpeakingPriority: SpeechPriority | null = null;
   private speechQueue: QueueItem[] = [];
-  private lastSpokenCue: string | null = null;
-  private randomCoachingTimeoutId: ReturnType<typeof setTimeout> | null = null;
   private announced30sRest: boolean = false;
+  private announced10s: boolean = false;
   private announcedMinutes: Set<number> = new Set();
+  private announcedCountdownSeconds: Set<number> = new Set();
   private isAvailable: boolean = false;
 
   constructor(settings: VoiceSettings) {
@@ -65,11 +64,6 @@ export class VoiceCoach {
   private enqueueSpeech(text: string, priority: SpeechPriority): void {
     if (!this.isAvailable || !this.settings.enabled) return;
 
-    // Never queue random coaching (priority 4) if higher priority items are pending
-    if (priority === 4 && this.speechQueue.some(item => item.priority < 4)) {
-      return;
-    }
-
     this.speechQueue.push({ text, priority });
     this.speechQueue.sort((a, b) => a.priority - b.priority);
     this.pumpQueue();
@@ -82,8 +76,11 @@ export class VoiceCoach {
     if (!item) return;
 
     this.isSpeaking = true;
+    this.currentlySpeakingPriority = item.priority;
     const utterance = new SpeechSynthesisUtterance(item.text);
-    utterance.rate = Math.max(0.7, Math.min(1.6, this.settings.speechRate));
+    const baseRate = Math.max(0.7, Math.min(1.6, this.settings.speechRate));
+    // For countdown cues, speak slightly crisper so each second's announcement completes comfortably
+    utterance.rate = item.priority === 1 && /^\d+ second/.test(item.text) ? Math.max(1.15, baseRate) : baseRate;
     utterance.volume = 1.0;
 
     if (this.settings.voiceURI) {
@@ -94,11 +91,13 @@ export class VoiceCoach {
 
     utterance.onend = () => {
       this.isSpeaking = false;
+      this.currentlySpeakingPriority = null;
       this.pumpQueue();
     };
 
     utterance.onerror = () => {
       this.isSpeaking = false;
+      this.currentlySpeakingPriority = null;
       this.pumpQueue();
     };
 
@@ -106,14 +105,15 @@ export class VoiceCoach {
       window.speechSynthesis.speak(utterance);
     } catch {
       this.isSpeaking = false;
+      this.currentlySpeakingPriority = null;
       this.pumpQueue();
     }
   }
 
   cancelAllSpeech(): void {
     this.speechQueue = [];
-    this.clearCoachingTimer();
     this.isSpeaking = false;
+    this.currentlySpeakingPriority = null;
     if (this.isAvailable) {
       try {
         window.speechSynthesis.cancel();
@@ -123,19 +123,13 @@ export class VoiceCoach {
     }
   }
 
-  private clearCoachingTimer(): void {
-    if (this.randomCoachingTimeoutId !== null) {
-      clearTimeout(this.randomCoachingTimeoutId);
-      this.randomCoachingTimeoutId = null;
-    }
-  }
-
   // ---- Lifecycle Event Handlers ----
 
   onIntervalStart(interval: FlatInterval): void {
     this.announced30sRest = false;
+    this.announced10s = false;
     this.announcedMinutes.clear();
-    this.clearCoachingTimer();
+    this.announcedCountdownSeconds.clear();
 
     if (interval.isRest) {
       if (this.settings.restAnnouncements) {
@@ -148,16 +142,10 @@ export class VoiceCoach {
           ? ` Round ${interval.roundNumber}.`
           : '.';
       this.enqueueSpeech(`${exerciseOrLabel}${roundSuffix}`, 1);
-
-      if (this.settings.randomCoaching) {
-        this.scheduleNextRandomCue(interval);
-      }
     }
   }
 
   onIntervalComplete(completed: FlatInterval, next: FlatInterval | null): void {
-    this.clearCoachingTimer();
-
     if (!completed.isRest && completed.roundNumber && completed.totalRounds && completed.totalRounds > 1) {
       this.enqueueSpeech('Round complete.', 1);
     }
@@ -179,67 +167,55 @@ export class VoiceCoach {
         this.announced30sRest = true;
         this.enqueueSpeech('Get ready.', 2);
       }
-      if (remainingSeconds === 10 && this.settings.countdownAt10) {
-        this.enqueueSpeech('Ten seconds.', 2);
-      }
-      if (remainingSeconds === 5 && this.settings.countdownAt5) {
-        this.enqueueSpeech('Five seconds.', 2);
-      }
-      return;
-    }
+    } else {
+      // ACTIVE intervals: Minute completed announcements
+      // Call out whenever a minute has passed in any workout interval (e.g. 1m, 2m, 3m...)
+      if (this.settings.minuteAnnouncements) {
+        const elapsedSeconds = durationSeconds - remainingSeconds;
+        const completedMinute = Math.floor(elapsedSeconds / 60);
 
-    // ACTIVE intervals: Minute completed announcements
-    if (interval.roundNumber && this.settings.minuteAnnouncements) {
-      const elapsedSeconds = durationSeconds - remainingSeconds;
-      const completedMinute = Math.floor(elapsedSeconds / 60);
-
-      if (completedMinute > 0 && elapsedSeconds % 60 === 0 && !this.announcedMinutes.has(completedMinute)) {
-        this.announcedMinutes.add(completedMinute);
-        const numberWords = ['One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight'];
-        const word = numberWords[completedMinute - 1] ?? `${completedMinute}`;
-        this.enqueueSpeech(`${word} minute${completedMinute > 1 ? 's' : ''} completed.`, 3);
+        if (completedMinute > 0 && remainingSeconds > 5 && !this.announcedMinutes.has(completedMinute)) {
+          this.announcedMinutes.add(completedMinute);
+          const numberWords = [
+            'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten',
+            'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen', 'Twenty'
+          ];
+          const word = completedMinute <= 20 ? numberWords[completedMinute - 1] : `${completedMinute}`;
+          this.enqueueSpeech(`${word} minute${completedMinute > 1 ? 's' : ''} completed.`, 3);
+        }
       }
     }
 
-    // Interval end countdown warnings
-    if (remainingSeconds === 10 && this.settings.countdownAt10) {
+    // Interval 10-second warning (for both work and rest)
+    if (remainingSeconds === 10 && this.settings.countdownAt10 && !this.announced10s) {
+      this.announced10s = true;
       this.enqueueSpeech('Ten seconds.', 2);
     }
-    if (remainingSeconds === 5 && this.settings.countdownAt5) {
-      this.enqueueSpeech('Five seconds.', 2);
-    }
-  }
 
-  private scheduleNextRandomCue(interval: FlatInterval): void {
-    this.clearCoachingTimer();
-    if (!this.settings.randomCoaching || interval.isRest) return;
+    // Last 5 seconds countdown: 5 seconds, 4 seconds, 3 seconds, 2 seconds, 1 second (for both work and rest)
+    if (remainingSeconds <= 5 && remainingSeconds >= 1 && this.settings.countdownAt5) {
+      if (!this.announcedCountdownSeconds.has(remainingSeconds)) {
+        this.announcedCountdownSeconds.add(remainingSeconds);
 
-    // Randomize within 25–40s (or around configured frequency)
-    const baseFreq = this.settings.coachingFrequencySeconds || 30;
-    const jitter = Math.floor((Math.random() - 0.5) * 12);
-    const delayMs = Math.max(18, baseFreq + jitter) * 1000;
+        // Discard low priority queue items to prevent any lag
+        this.speechQueue = this.speechQueue.filter(item => item.priority <= 1);
 
-    this.randomCoachingTimeoutId = setTimeout(() => {
-      this.deliverRandomCoachingCue(interval);
-      this.scheduleNextRandomCue(interval);
-    }, delayMs);
-  }
+        // If currently speaking a lower priority cue, cancel it immediately so countdown fires on time
+        if (this.isSpeaking && this.currentlySpeakingPriority !== null && this.currentlySpeakingPriority > 1) {
+          if (this.isAvailable) {
+            try {
+              window.speechSynthesis.cancel();
+            } catch {
+              // Ignored
+            }
+          }
+          this.isSpeaking = false;
+          this.currentlySpeakingPriority = null;
+        }
 
-  private deliverRandomCoachingCue(interval: FlatInterval): void {
-    if (interval.isRest || !this.settings.randomCoaching) return;
-
-    // Don't interrupt higher-priority announcements
-    if (this.speechQueue.some(item => item.priority <= 3)) return;
-
-    const cues =
-      interval.coachingCues && interval.coachingCues.length > 0
-        ? interval.coachingCues
-        : getCoachingLibrary(interval.coachingCategory as never);
-
-    const cue = getRandomCue(cues, this.lastSpokenCue);
-    if (cue) {
-      this.lastSpokenCue = cue;
-      this.enqueueSpeech(cue, 4);
+        const countText = remainingSeconds === 1 ? '1 second' : `${remainingSeconds} seconds`;
+        this.enqueueSpeech(countText, 1);
+      }
     }
   }
 
@@ -248,13 +224,11 @@ export class VoiceCoach {
   }
 
   onWorkoutComplete(): void {
-    this.clearCoachingTimer();
     this.cancelAllSpeech();
     this.enqueueSpeech('Workout complete. Outstanding effort!', 1);
   }
 
   onWorkoutPaused(): void {
-    this.clearCoachingTimer();
     this.cancelAllSpeech();
     this.enqueueSpeech('Workout paused.', 1);
   }

@@ -197,34 +197,35 @@ export function WorkoutScreen({ workout, settings, onComplete, onBack }: Workout
         </div>
       )}
 
-      {/* TOP HEADER: Total workout countdown & overall progress */}
-      <header className="pt-safe-top px-5 pt-3 pb-2 z-10 bg-black/20 backdrop-blur-sm">
-        <div className="max-w-md mx-auto space-y-1.5">
-          <div className="flex items-center justify-between text-xs uppercase tracking-wider font-bold">
-            <span className="text-white/70">Total Workout Remaining</span>
-            <div className="flex items-center gap-2">
-              <span className="font-mono text-white/50 text-[11px]">
-                Target: {formatTime(workout.durationSeconds)}
-              </span>
-              <span className="text-white font-mono text-base font-black">
-                {timerState ? formatTime(timerState.totalRemainingSeconds) : '--:--'}
-              </span>
+      {/* Top Safe Area Spacer for iOS Notch */}
+      <div className="pt-safe-top" />
+
+      {/* CENTER AREA: Total Remaining, Phase, Round & Large Countdown Timer */}
+      <main className="flex-1 flex flex-col items-center justify-center px-4 py-4 text-center my-auto">
+        <div className="max-w-md w-full space-y-5">
+          {/* TOTAL WORKOUT REMAINING & Overall Progress Bar (Positioned directly above Phase Header) */}
+          <div className="w-full space-y-1.5 px-2">
+            <div className="flex items-center justify-between text-xs uppercase tracking-wider font-bold">
+              <span className="text-white/70">Total Workout Remaining</span>
+              <div className="flex items-center gap-2">
+                <span className="font-mono text-white/50 text-[11px]">
+                  Target: {formatTime(workout.durationSeconds)}
+                </span>
+                <span className="text-white font-mono text-base font-black">
+                  {timerState ? formatTime(timerState.totalRemainingSeconds) : '--:--'}
+                </span>
+              </div>
+            </div>
+
+            {/* Overall Progress Bar */}
+            <div className="w-full bg-black/30 rounded-full h-2 overflow-hidden border border-white/10">
+              <div
+                className="bg-white h-full rounded-full transition-all duration-300"
+                style={{ width: `${timerState ? timerState.progressPercent : 0}%` }}
+              />
             </div>
           </div>
 
-          {/* Overall Progress Bar */}
-          <div className="w-full bg-black/30 rounded-full h-2 overflow-hidden border border-white/10">
-            <div
-              className="bg-white h-full rounded-full transition-all duration-300"
-              style={{ width: `${timerState ? timerState.progressPercent : 0}%` }}
-            />
-          </div>
-        </div>
-      </header>
-
-      {/* CENTER AREA: Phase, Round & Large Countdown Timer */}
-      <main className="flex-1 flex flex-col items-center justify-center px-4 py-6 text-center my-auto">
-        <div className="max-w-md w-full space-y-4">
           {/* Phase & Round Banner */}
           <div className="space-y-1">
             <span className="text-xs sm:text-sm font-black uppercase tracking-[0.25em] text-white/80 block">

@@ -168,6 +168,9 @@ export function useWorkout(
           completedRoundsCountRef.current++;
         }
       },
+      onIntervalStart: (interval: FlatInterval) => {
+        coachRef.current?.onIntervalStart(interval);
+      },
       onWorkoutComplete: async () => {
         coachRef.current?.onWorkoutComplete();
         releaseWakeLock();

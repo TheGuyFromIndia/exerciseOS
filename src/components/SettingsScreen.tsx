@@ -125,30 +125,6 @@ export function SettingsScreen({ settings, onUpdate, onUpdateVoice, onBack }: Se
                 </div>
               </div>
 
-              {/* Coaching Frequency Slider */}
-              <div className="space-y-1.5">
-                <div className="flex justify-between text-xs">
-                  <label className="font-bold text-slate-300">Random Coaching Interval</label>
-                  <span className="font-mono text-blue-400 font-bold">
-                    ~{settings.voice.coachingFrequencySeconds}s
-                  </span>
-                </div>
-                <input
-                  type="range"
-                  min="20"
-                  max="60"
-                  step="5"
-                  value={settings.voice.coachingFrequencySeconds}
-                  onChange={e => onUpdateVoice({ coachingFrequencySeconds: parseInt(e.target.value) })}
-                  className="w-full accent-blue-500"
-                />
-                <div className="flex justify-between text-[10px] text-slate-500">
-                  <span>Frequent (20s)</span>
-                  <span>Default (30s)</span>
-                  <span>Sparse (60s)</span>
-                </div>
-              </div>
-
               {/* Announcement Toggles */}
               <div className="space-y-2.5 pt-2">
                 <ToggleItem
@@ -167,16 +143,9 @@ export function SettingsScreen({ settings, onUpdate, onUpdateVoice, onBack }: Se
 
                 <ToggleItem
                   title="Countdown Warnings (5s)"
-                  subtitle="Voice warning 5 seconds before interval completes"
+                  subtitle="Voice countdown during the last 5 seconds"
                   checked={settings.voice.countdownAt5}
                   onChange={v => onUpdateVoice({ countdownAt5: v })}
-                />
-
-                <ToggleItem
-                  title="Random Coaching Instructions"
-                  subtitle="Technique cues for boxing, form & breathing"
-                  checked={settings.voice.randomCoaching}
-                  onChange={v => onUpdateVoice({ randomCoaching: v })}
                 />
               </div>
 

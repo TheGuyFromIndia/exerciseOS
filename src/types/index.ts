@@ -107,8 +107,8 @@ export interface VoiceSettings {
   restAnnouncements: boolean;
   countdownAt10: boolean;
   countdownAt5: boolean;
-  randomCoaching: boolean;
-  coachingFrequencySeconds: number; // avg seconds between random coaching
+  randomCoaching?: boolean;
+  coachingFrequencySeconds?: number;
 }
 
 export interface AppSettings {
